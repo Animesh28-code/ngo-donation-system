@@ -1,16 +1,13 @@
-const router = require("express").Router();
-const auth = require("../middleware/auth");
-const requireRole = require("../middleware/role");
+const express = require("express");
+const router = express.Router();
 
+const auth = require("../middleware/auth");
 const userController = require("../controllers/userController");
 
-// only USER access
-router.use(auth, requireRole("USER"));
+router.get("/profile", auth, userController.getProfile);
 
-router.get("/me/registration", userController.getMyRegistration);
-router.get("/me/donations", userController.getMyDonations);
-
-router.post("/donations", userController.createDonation);
-router.post("/donations/:transactionId/verify", userController.verifyDonation);
+router.post("/donate", auth, userController.createDonation);
+router.post("/donate/status", auth, userController.updateDonationStatus);
+router.get("/donations", auth, userController.listDonations);
 
 module.exports = router;

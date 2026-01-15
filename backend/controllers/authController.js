@@ -13,7 +13,7 @@ function signToken(user) {
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, phone, password, role, registration } = req.body;
+    const { name, email, phone, password, registration } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: "name, email, password are required" });
@@ -24,12 +24,13 @@ exports.register = async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
+    // Do NOT allow public registration to set ADMIN role. All new users are regular USERs.
     const user = await User.create({
       name,
       email,
       phone,
       passwordHash,
-      role: role === "ADMIN" ? "ADMIN" : "USER"
+      role: "USER"
     });
 
     // ✅ Registration saved independent of donation

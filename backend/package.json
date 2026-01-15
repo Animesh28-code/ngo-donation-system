@@ -2,10 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js"
-  },
+
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
@@ -17,6 +14,20 @@
     "morgan": "^1.10.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.11",
+    "jest": "^29.0.0",
+    "supertest": "^6.3.3",
+    "mongodb-memory-server": "^8.12.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testTimeout": 30000
+  },
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "create-admin": "node scripts/createAdmin.js",
+    "setup-demo": "node scripts/setupDemo.js",
+    "test": "jest --runInBand"
   }
 }

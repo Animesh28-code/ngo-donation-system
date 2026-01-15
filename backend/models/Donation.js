@@ -7,6 +7,7 @@ const donationSchema = new mongoose.Schema(
     status: { type: String, enum: ["PENDING", "SUCCESS", "FAILED"], default: "PENDING", index: true },
     transactionId: { type: String, required: true, unique: true },
     verifiedAt: Date,
+    verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     failureReason: String
   },
   { timestamps: true }
