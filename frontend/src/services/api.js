@@ -18,6 +18,18 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Handle response errors
+api.interceptors.response.use(
+  (response) => {
+    console.log('API Response:', response.config.method, response.config.url, response.status)
+    return response
+  },
+  (error) => {
+    console.error('API Error:', error.config?.method, error.config?.url, error.response?.status, error.response?.data)
+    return Promise.reject(error)
+  }
+)
+
 // Auth APIs
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
@@ -30,6 +42,7 @@ export const userAPI = {
   createDonation: (data) => api.post('/user/donate', data),
   updateDonationStatus: (data) => api.post('/user/donate/status', data),
   listDonations: () => api.get('/user/donations'),
+  getDonationByOrderId: (orderId) => api.get(`/user/donations/by-order/${orderId}`),
 }
 
 // Admin APIs
@@ -42,8 +55,10 @@ export const adminAPI = {
 
 // Payment APIs
 export const paymentAPI = {
-  initiatePayment: (data) => api.post('/payment/initiate', data),
+  initiatePayment: (data) => api.get(`/payment/init/${data.donationId}`),
   verifyPayment: (data) => api.post('/payment/verify', data),
+  getPaymentStatus: (donationId) => api.get(`/payment/status/${donationId}`),
+  initPayHerePayment: (data) => api.post('/payhere/init', data),
 }
 
 export default api

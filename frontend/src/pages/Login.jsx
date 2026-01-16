@@ -15,26 +15,57 @@ export default function Login({ setToken, setUser }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
     setLoading(true)
+    setError('')
 
     try {
+      console.log('🔐 Attempting login...')
       const response = await authAPI.login(formData)
+      console.log('✅ Login response received:', response.status)
+      console.log('Response data:', response.data)
+      
+      if (!response.data || !response.data.token) {
+        console.error('❌ Invalid response structure:', response.data)
+        setError('Invalid server response')
+        setLoading(false)
+        return
+      }
+      
       const { token, user } = response.data
+      console.log('User role:', user?.role)
 
       localStorage.setItem('token', token)
       localStorage.setItem('user', JSON.stringify(user))
-
       setToken(token)
       setUser(user)
 
-      if (user.role === 'ADMIN') {
-        navigate('/admin/dashboard')
-      } else {
-        navigate('/user/dashboard')
-      }
+      console.log('✅ Data saved, navigating...')
+      
+      setTimeout(() => {
+        if (user.role === 'ADMIN') {
+          navigate('/admin/dashboard')
+        } else {
+          navigate('/user/dashboard')
+        }
+      }, 500)
+      
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.')
+      console.error('❌ Login error caught:')
+      console.error('  Error object:', err)
+      console.error('  Message:', err.message)
+      console.error('  Response:', err.response)
+      console.error('  Request:', err.request?.status)
+      
+      // Set user-friendly error message
+      if (err.response?.data?.message) {
+        setError(err.response.data.message)
+      } else if (err.response?.status === 401) {
+        setError('Invalid email or password')
+      } else if (err.code === 'ERR_NETWORK') {
+        setError('Cannot connect to server')
+      } else {
+        setError('Login failed')
+      }
     } finally {
       setLoading(false)
     }
@@ -43,7 +74,6 @@ export default function Login({ setToken, setUser }) {
   return (
     <div className="form-container">
       <h1>NGO Donation System - Login</h1>
-      {error && <div className="alert alert-error">{error}</div>}
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">

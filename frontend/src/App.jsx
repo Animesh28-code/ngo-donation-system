@@ -7,6 +7,7 @@ import UserDashboard from './pages/UserDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import DonationForm from './pages/DonationForm'
 import DonationHistory from './pages/DonationHistory'
+import PaymentProcessing from './pages/PaymentProcessing'
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'))
@@ -84,6 +85,15 @@ function App() {
           element={
             <ProtectedRoute requiredRole="USER">
               <DonationHistory user={user} />
+            </ProtectedRoute>
+          } 
+        />
+
+        <Route 
+          path="/payment/processing" 
+          element={
+            <ProtectedRoute>
+              <PaymentProcessing />
             </ProtectedRoute>
           } 
         />

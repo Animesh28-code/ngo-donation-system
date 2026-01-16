@@ -101,3 +101,26 @@ exports.listDonations = async (req, res) => {
     return res.status(500).json({ message: err.message });
   }
 };
+
+exports.getDonationByOrderId = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    if (!orderId) {
+      return res.status(400).json({ message: "orderId is required" });
+    }
+
+    const donation = await Donation.findOne({ 
+      orderId,
+      userId: req.user.id 
+    });
+
+    if (!donation) {
+      return res.status(404).json({ message: "Donation not found" });
+    }
+
+    return res.json(donation);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};

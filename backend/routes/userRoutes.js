@@ -9,5 +9,6 @@ router.get("/profile", auth, userController.getProfile);
 router.post("/donate", auth, userController.createDonation);
 router.post("/donate/status", auth, userController.updateDonationStatus);
 router.get("/donations", auth, userController.listDonations);
+router.get("/donations/by-order/:orderId", auth, userController.getDonationByOrderId);
 
 module.exports = router;
