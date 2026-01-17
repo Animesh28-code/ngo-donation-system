@@ -108,8 +108,8 @@ export default function DonationForm({ user }) {
     setLoading(true)
 
     try {
-      if (!amount || amount < 1) {
-        setError('Please enter a valid amount (minimum LKR 1)')
+      if (!amount || amount < 30) {
+        setError('Please enter a valid amount (minimum LKR 30)')
         setLoading(false)
         return
       }
@@ -141,8 +141,8 @@ export default function DonationForm({ user }) {
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             required
-            placeholder="Enter amount (minimum LKR 1)"
-            min="1"
+            placeholder="Enter amount (minimum LKR 30)"
+            min="30"
             step="1"
           />
         </div>
