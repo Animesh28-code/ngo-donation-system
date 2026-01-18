@@ -12,6 +12,7 @@ exports.initPayment = async (req, res) => {
     const merchant_id = process.env.PAYHERE_MERCHANT_ID;
     const merchant_secret = process.env.PAYHERE_MERCHANT_SECRET;
     const sandbox = String(process.env.PAYHERE_SANDBOX) === "true";
+    const isDevelopmentMode = String(process.env.DEVELOPMENT_MODE_SKIP_PAYMENT_GATEWAY) === "true";
     const userId = req.user.id; // Get from auth middleware
 
     const {
@@ -24,24 +25,47 @@ exports.initPayment = async (req, res) => {
       return res.status(400).json({ message: "amount and donor details required" });
     }
 
+    // Validate minimum donation amount (LKR 30)
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount < 30) {
+      return res.status(400).json({ message: "Minimum donation amount is LKR 30" });
+    }
+
     // 1) create a pending donation attempt in DB (IMPORTANT rule)
     const order_id = `DON_${Date.now()}`;
     const currency = "LKR";
 
-    const donation = await Donation.create({
+    const donationData = {
       userId,
       orderId: order_id,
-      items,
-      amount: Number(amount),
-      currency,
-      paymentStatus: "PENDING",
-      donor,
-      gateway: "PAYHERE",
+      amount: numAmount,
+      status: isDevelopmentMode ? "SUCCESS" : "PENDING",
+      paymentStatus: isDevelopmentMode ? "SUCCESS" : "PENDING",
+      paymentMethod: "payhere",
       transactionId: order_id,
-    });
+      address: donor.address || "",
+      city: donor.city || "",
+    };
+
+    const donation = await Donation.create(donationData);
+
+    // If in development mode, auto-approve the payment
+    if (isDevelopmentMode) {
+      console.log("✅ DEVELOPMENT MODE: Payment auto-approved for donation:", donation._id);
+      return res.json({
+        sandbox: true,
+        merchant_id: "TEST",
+        order_id,
+        amount: numAmount.toFixed(2),
+        currency,
+        donationId: donation._id,
+        message: "DEVELOPMENT MODE: Payment auto-approved",
+        isDevelopmentMode: true,
+      });
+    }
 
     // 2) hash generation (PayHere style)
-    const amountFormatted = Number(amount).toFixed(2);
+    const amountFormatted = numAmount.toFixed(2);
     const secretHash = md5(merchant_secret).toUpperCase();
     const hash = md5(
       merchant_id +
@@ -96,6 +120,7 @@ exports.notifyPayment = async (req, res) => {
   try {
     const merchant_id = process.env.PAYHERE_MERCHANT_ID;
     const merchant_secret = process.env.PAYHERE_MERCHANT_SECRET;
+    const isDevelopmentMode = String(process.env.DEVELOPMENT_MODE_SKIP_PAYMENT_GATEWAY) === "true";
 
     const {
       order_id,
@@ -118,24 +143,31 @@ exports.notifyPayment = async (req, res) => {
       return res.status(400).send("missing order_id");
     }
 
-    // Verify signature (genuine confirmation)
-    const secretHash = md5(merchant_secret).toUpperCase();
-    const expectedSig = md5(
-      merchant_id +
-      order_id +
-      payhere_amount +
-      payhere_currency +
-      status_code +
-      secretHash
-    ).toUpperCase();
+    // If in development mode, skip signature verification
+    let isValid = isDevelopmentMode;
 
-    const isValid = (expectedSig === String(md5sig || "").toUpperCase());
+    if (!isDevelopmentMode) {
+      // Verify signature (genuine confirmation)
+      const secretHash = md5(merchant_secret).toUpperCase();
+      const expectedSig = md5(
+        merchant_id +
+        order_id +
+        payhere_amount +
+        payhere_currency +
+        status_code +
+        secretHash
+      ).toUpperCase();
 
-    console.log("🔐 Signature verification:", {
-      expected: expectedSig,
-      received: String(md5sig || "").toUpperCase(),
-      isValid,
-    });
+      isValid = (expectedSig === String(md5sig || "").toUpperCase());
+
+      console.log("🔐 Signature verification:", {
+        expected: expectedSig,
+        received: String(md5sig || "").toUpperCase(),
+        isValid,
+      });
+    } else {
+      console.log("✅ DEVELOPMENT MODE: Skipping signature verification");
+    }
 
     // Map PayHere status_code to your system status
     // 2 = success, 0 = pending, anything else = failed
@@ -143,14 +175,14 @@ exports.notifyPayment = async (req, res) => {
     if (String(status_code) === "2") newStatus = "SUCCESS";
     else if (String(status_code) === "0") newStatus = "PENDING";
 
-    // Update DB only if signature valid
+    // Update DB only if signature valid (or dev mode)
     if (isValid) {
       const updated = await Donation.findOneAndUpdate(
         { orderId: order_id },
         {
+          status: newStatus,
           paymentStatus: newStatus,
-          paymentVerified: true,
-          gatewayResponse: req.body,
+          verifiedAt: new Date(),
           transactionDate: new Date(),
         },
         { new: true }
@@ -161,9 +193,9 @@ exports.notifyPayment = async (req, res) => {
       const updated = await Donation.findOneAndUpdate(
         { orderId: order_id },
         {
+          status: "FAILED",
           paymentStatus: "FAILED",
-          paymentVerified: false,
-          gatewayResponse: req.body,
+          failureReason: "Invalid payment signature",
         },
         { new: true }
       );

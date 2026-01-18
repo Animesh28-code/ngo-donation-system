@@ -24,8 +24,8 @@ exports.createDonation = async (req, res) => {
     }
 
     const amt = parseFloat(amount);
-    if (isNaN(amt) || amt < 1) {
-      return res.status(400).json({ message: "Invalid amount; must be >= 1" });
+    if (isNaN(amt) || amt < 30) {
+      return res.status(400).json({ message: "Invalid amount; minimum donation is LKR 30" });
     }
 
     // Use strong random UUID to avoid collisions

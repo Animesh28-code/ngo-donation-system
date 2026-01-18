@@ -21,7 +21,7 @@ export default function PaymentProcessing() {
     const pollInterval = setInterval(async () => {
       try {
         const res = await fetch(
-          `${BACKEND_URL}/api/donations/by-order/${orderId}`,
+          `${BACKEND_URL}/api/user/donations/by-order/${orderId}`,
           {
             headers: {
               Authorization: `Bearer ${localStorage.getItem('token')}`,

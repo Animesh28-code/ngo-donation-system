@@ -3,10 +3,11 @@ const mongoose = require("mongoose");
 const donationSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    amount: { type: Number, required: true, min: 1 },
+    amount: { type: Number, required: true, min: 30 },
     status: { type: String, enum: ["PENDING", "SUCCESS", "FAILED"], default: "PENDING", index: true },
     paymentStatus: { type: String, enum: ["PENDING", "SUCCESS", "FAILED"], default: "PENDING", index: true },
     transactionId: { type: String, required: true, unique: true },
+    orderId: String, // Order ID from payment gateway
     paymentId: String, // PayHere payment ID
     paymentMethod: { type: String, default: "payhere" },
     transactionDate: Date,
