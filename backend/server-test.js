@@ -211,6 +211,54 @@ app.get("/api/admin/donations", authMiddleware, (req, res) => {
   res.json(db.donations);
 });
 
+// ✅ ADMIN REGISTRATIONS LIST
+app.get("/api/admin/registrations", authMiddleware, (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    return res.status(403).json({ message: "Unauthorized" });
+  }
+  const regsWithUsers = db.registrations.map(reg => ({
+    ...reg,
+    userId: db.users.find(u => u._id === reg.userId)
+  }));
+  res.json(regsWithUsers);
+});
+
+// ✅ ADMIN EXPORT REGISTRATIONS CSV
+app.get("/api/admin/registrations/export", authMiddleware, (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    return res.status(403).json({ message: "Unauthorized" });
+  }
+  
+  let csv = "Name,Email,Address,City,State,Pincode,Cause\n";
+  db.registrations.forEach(reg => {
+    const user = db.users.find(u => u._id === reg.userId);
+    csv += `${user?.name || ""},${user?.email || ""},"${reg.address || ""}","${reg.city || ""}","${reg.state || ""}","${reg.pincode || ""}","${reg.cause || ""}"\n`;
+  });
+  
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="registrations.csv"');
+  res.send(csv);
+});
+
+// ✅ ADMIN DONATION STATS
+app.get("/api/admin/stats", authMiddleware, (req, res) => {
+  if (req.user.role !== "ADMIN") {
+    return res.status(403).json({ message: "Unauthorized" });
+  }
+  const total = db.donations.length;
+  const success = db.donations.filter(d => d.status === "SUCCESS").length;
+  const failed = db.donations.filter(d => d.status === "FAILED").length;
+  const totalAmount = db.donations.reduce((sum, d) => d.status === "SUCCESS" ? sum + d.amount : sum, 0);
+  
+  res.json({
+    totalDonations: total,
+    successCount: success,
+    failedCount: failed,
+    successPercentage: total ? ((success / total) * 100).toFixed(2) : 0,
+    totalAmountCollected: totalAmount
+  });
+});
+
 // ✅ START SERVER
 app.listen(PORT, "0.0.0.0", () => {
   console.log("\n🎉 TEST SERVER STARTED (In-Memory Database)");
