@@ -317,6 +317,38 @@ app.post("/api/payhere/notify", (req, res) => {
   }
 });
 
+// ✅ TEST WEBHOOK - Simulate PayHere webhook for development (70% success rate)
+app.post("/api/payhere/notify-test", (req, res) => {
+  try {
+    const { order_id } = req.body || {};
+
+    if (!order_id) {
+      console.error("❌ Missing order_id in test-notify");
+      return res.status(400).json({ message: "Missing order_id" });
+    }
+
+    const donation = db.donations.find((d) => d.orderId === order_id);
+    if (!donation) {
+      console.error("❌ Donation not found for order_id:", order_id);
+      return res.status(404).json({ message: "Donation not found" });
+    }
+
+    // 70% success, 30% pending (for demo/testing)
+    const randomStatus = Math.random() < 0.7 ? "SUCCESS" : "PENDING";
+    
+    donation.status = randomStatus;
+    donation.paymentStatus = randomStatus;
+    donation.paymentVerified = randomStatus === "SUCCESS";
+    donation.transactionDate = new Date();
+
+    console.log(`✅ Test webhook: ${order_id} → ${randomStatus}`);
+    return res.json({ message: "Test webhook processed", status: randomStatus });
+  } catch (err) {
+    console.error("test-notify error", err);
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 // ✅ ADMIN DASHBOARD
 app.get("/api/admin/dashboard", authMiddleware, (req, res) => {
   if (req.user.role !== "ADMIN") {

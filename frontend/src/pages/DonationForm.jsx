@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { userAPI } from '../services/api'
 
 const BACKEND_URL = 'http://localhost:5000'
 
@@ -10,58 +9,20 @@ export default function DonationForm({ user }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
-  const [cardType, setCardType] = useState('visa')
-  const [cardNumber, setCardNumber] = useState('')
-  const [cardExpiry, setCardExpiry] = useState('')
-  const [cardCVV, setCardCVV] = useState('')
+  const [showBankForm, setShowBankForm] = useState(false)
+  const [showPaymentMethods, setShowPaymentMethods] = useState(false)
   const [cardholderName, setCardholderName] = useState('')
-  const [showCardForm, setShowCardForm] = useState(false)
-
-  const handleCardNumberChange = (e) => {
-    const value = e.target.value.replace(/\s/g, '')
-    const formatted = value.replace(/(\d{4})(?=\d)/g, '$1 ')
-    setCardNumber(formatted)
-  }
-
-  const handleExpiryChange = (e) => {
-    let value = e.target.value.replace(/\D/g, '')
-    if (value.length >= 2) {
-      value = value.slice(0, 2) + '/' + value.slice(2, 4)
-    }
-    setCardExpiry(value)
-  }
-
-  const handleCVVChange = (e) => {
-    setCardCVV(e.target.value.replace(/\D/g, '').slice(0, 4))
-  }
-
-  const validateCardDetails = () => {
-    if (!cardNumber.replace(/\s/g, '') || cardNumber.replace(/\s/g, '').length < 13) {
-      setError('Please enter a valid card number')
-      return false
-    }
-    if (!cardExpiry || cardExpiry.length < 5) {
-      setError('Please enter card expiry (MM/YY)')
-      return false
-    }
-    if (!cardCVV || cardCVV.length < 3) {
-      setError('Please enter card CVV')
-      return false
-    }
-    if (!cardholderName.trim()) {
-      setError('Please enter cardholder name')
-      return false
-    }
-    return true
-  }
+  const [cardNumber, setCardNumber] = useState('')
+  const [cvv, setCvv] = useState('')
+  const [expiry, setExpiry] = useState('')
+  const [cardErrors, setCardErrors] = useState({})
 
   const startPayHerePayment = async (donationData) => {
     try {
-      setSuccess('⏳ Initializing PayHere payment...')
+      setSuccess('⏳ Initializing PayHere payment gateway...')
       const url = `${BACKEND_URL}/api/payhere/init`
-      console.log('🔗 Calling URL:', url)
+      console.log('🔗 Calling PayHere Init:', url)
 
-      // Call backend to get payment object with hash
       const res = await fetch(url, {
         method: 'POST',
         headers: { 
@@ -83,41 +44,30 @@ export default function DonationForm({ user }) {
       })
 
       if (!res.ok) {
-        // Get raw response to debug
         const text = await res.text()
         console.error('❌ Response status:', res.status)
-        console.error('❌ Response body (first 500 chars):', text.substring(0, 500))
-        
-        // Try to parse as JSON
         let errData
         try {
           errData = JSON.parse(text)
         } catch {
-          errData = { message: `Server error (${res.status}): ${text.substring(0, 200)}` }
+          errData = { message: `Server error (${res.status})` }
         }
         throw new Error(errData.message || 'Failed to initialize payment')
       }
 
       const payment = await res.json()
-      console.log('✅ Payment object received:', payment)
-      console.log('✅ merchant_id:', payment.merchant_id)
-      console.log('✅ order_id:', payment.order_id)
-      console.log('✅ amount:', payment.amount)
-      console.log('✅ hash:', payment.hash)
+      console.log('✅ Payment object:', payment)
 
-      // Check if PayHere is loaded
       if (!window.payhere) {
         throw new Error('PayHere library not loaded. Please refresh the page.')
       }
 
       setSuccess('⏳ Opening PayHere payment gateway...')
 
-      // Handle payment completion
       window.payhere.onCompleted = async function (orderId) {
         console.log('✅ Payment completed. Order ID: ' + orderId)
-        setSuccess('⏳ Processing payment, simulating webhook...')
+        setSuccess('⏳ Processing payment...')
         
-        // Call test webhook to simulate PayHere notification (70% success)
         try {
           const webhookRes = await fetch(`${BACKEND_URL}/api/payhere/notify-test`, {
             method: 'POST',
@@ -131,13 +81,11 @@ export default function DonationForm({ user }) {
           console.error('Webhook call failed:', err)
         }
         
-        // Redirect to processing page to poll status
         setTimeout(() => {
           navigate(`/payment/processing?order_id=${orderId}`)
         }, 1500)
       }
 
-      // Handle payment dismissal
       window.payhere.onDismissed = function () {
         console.log('⚠️ Payment dismissed by user')
         setError('Payment cancelled by user')
@@ -145,7 +93,6 @@ export default function DonationForm({ user }) {
         setSuccess('')
       }
 
-      // Handle payment error
       window.payhere.onError = function (error) {
         console.error('❌ Payment error:', error)
         setError('Payment error: ' + error)
@@ -153,50 +100,472 @@ export default function DonationForm({ user }) {
         setSuccess('')
       }
 
-      // Start PayHere payment with all required fields
-      console.log('🚀 Starting PayHere payment with:', payment)
+      console.log('🚀 Launching PayHere gateway')
       window.payhere.startPayment(payment)
 
     } catch (err) {
-      console.error('PayHere integration error:', err)
+      console.error('PayHere error:', err)
       setError(err.message || 'Failed to initialize payment')
       setLoading(false)
       setSuccess('')
     }
   }
 
-  const handleSubmit = async (e) => {
+  const validateCardForm = () => {
+    const errors = {}
+    if (!cardholderName.trim()) {
+      errors.cardholderName = 'The card holder name is required'
+    }
+    if (!cardNumber.replace(/\s/g, '')) {
+      errors.cardNumber = 'Credit Card Number is required'
+    } else if (cardNumber.replace(/\s/g, '').length < 13) {
+      errors.cardNumber = 'Invalid card number'
+    }
+    if (!cvv || cvv.length < 3) {
+      errors.cvv = 'CVV is required'
+    }
+    if (!expiry || !expiry.includes('/')) {
+      errors.expiry = 'Expiry MM/YY is required'
+    }
+    setCardErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleCardNumberChange = (e) => {
+    let value = e.target.value.replace(/\s/g, '')
+    if (value.length > 19) value = value.slice(0, 19)
+    const formatted = value.replace(/(\d{4})/g, '$1 ').trim()
+    setCardNumber(formatted)
+  }
+
+  const handleExpiryChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '')
+    if (value.length >= 2) {
+      value = value.slice(0, 2) + '/' + value.slice(2, 4)
+    }
+    setExpiry(value)
+  }
+
+  const handleCVVChange = (e) => {
+    const value = e.target.value.replace(/\D/g, '').slice(0, 4)
+    setCvv(value)
+  }
+
+  const handleProceedToPayHere = async (e) => {
     e.preventDefault()
     setError('')
     setSuccess('')
 
-    // Check if card form is shown and validate
-    if (showCardForm) {
-      if (!validateCardDetails()) {
-        setLoading(false)
-        return
-      }
-    }
-
-    setLoading(true)
-
     try {
       if (!amount || amount < 30) {
         setError('Please enter a valid amount (minimum LKR 30)')
-        setLoading(false)
         return
       }
+      setShowPaymentMethods(true)
+    } catch (err) {
+      setError(err.message || 'An error occurred')
+    }
+  }
 
-      // Start PayHere payment
+  const handleSelectPaymentMethod = (method) => {
+    if (method === 'bank-card') {
+      setShowPaymentMethods(false)
+      setShowBankForm(true)
+    } else {
+      setError(`${method} payment method coming soon`)
+    }
+  }
+
+  const handleBackFromPaymentMethods = () => {
+    setShowPaymentMethods(false)
+    setError('')
+  }
+
+  const handleCardPayment = async (e) => {
+    e.preventDefault()
+    setCardErrors({})
+
+    if (!validateCardForm()) {
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setSuccess('')
+
+    try {
       await startPayHerePayment({
         amount: parseFloat(amount),
+        cardholderName,
+        cardNumber: cardNumber.replace(/\s/g, ''),
+        cvv,
+        expiry,
       })
-
     } catch (err) {
-      console.error('Donation form error:', err)
+      console.error('Payment error:', err)
       setError(err.message || 'An error occurred')
       setLoading(false)
     }
+  }
+
+  const handleBackFromCard = () => {
+    setShowBankForm(false)
+    setShowPaymentMethods(true)
+    setCardholderName('')
+    setCardNumber('')
+    setCvv('')
+    setExpiry('')
+    setCardErrors({})
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    await handleProceedToPayHere(e)
+  }
+
+  if (showPaymentMethods) {
+    return (
+      <div className="form-container">
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px' }}>
+          <button
+            onClick={handleBackFromPaymentMethods}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '24px',
+              cursor: 'pointer',
+              marginRight: '10px',
+              padding: 0
+            }}
+          >
+            ← 
+          </button>
+          <div style={{ flex: 1 }}>
+            <div style={{
+              backgroundColor: '#007bff',
+              color: 'white',
+              padding: '15px',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ width: '50px', height: '50px', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '24px' }}>💳</span>
+                </div>
+                <div style={{ textAlign: 'left' }}>
+                  <h3 style={{ margin: 0, fontSize: '14px' }}>Student Project</h3>
+                  <p style={{ margin: 0, fontSize: '12px' }}>NGO Donation</p>
+                </div>
+              </div>
+              <h2 style={{ marginTop: '10px', marginBottom: 0 }}>Rs. {parseFloat(amount).toFixed(2)}</h2>
+            </div>
+          </div>
+        </div>
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        <h3 style={{ marginTop: '30px', marginBottom: '20px', fontSize: '16px', fontWeight: '600' }}>Pay with</h3>
+
+        {/* Bank Card Section */}
+        <div style={{ marginBottom: '30px' }}>
+          <p style={{ color: '#999', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', marginBottom: '15px' }}>Bank Card</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '15px' }}>
+            <button
+              onClick={() => handleSelectPaymentMethod('bank-card')}
+              style={{
+                padding: '20px 15px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.3s',
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#f5f5f5'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#fff'}
+            >
+              <span style={{ fontSize: '28px', marginBottom: '8px' }}>💳</span>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#333' }}>VISA</span>
+            </button>
+
+            <button
+              onClick={() => handleSelectPaymentMethod('bank-card')}
+              style={{
+                padding: '20px 15px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.3s',
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#f5f5f5'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#fff'}
+            >
+              <span style={{ fontSize: '28px', marginBottom: '8px' }}>🟠🔴</span>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#333' }}>Mastercard</span>
+            </button>
+
+            <button
+              onClick={() => handleSelectPaymentMethod('bank-card')}
+              style={{
+                padding: '20px 15px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.3s',
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#f5f5f5'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#fff'}
+            >
+              <span style={{ fontSize: '28px', marginBottom: '8px' }}>💎</span>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#333' }}>Amex</span>
+            </button>
+
+            <button
+              onClick={() => handleSelectPaymentMethod('discover')}
+              style={{
+                padding: '20px 15px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.3s',
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#f5f5f5'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#fff'}
+            >
+              <span style={{ fontSize: '28px', marginBottom: '8px' }}>🔍</span>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#333' }}>Discover</span>
+            </button>
+
+            <button
+              onClick={() => handleSelectPaymentMethod('diners')}
+              style={{
+                padding: '20px 15px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                backgroundColor: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.3s',
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#f5f5f5'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#fff'}
+            >
+              <span style={{ fontSize: '28px', marginBottom: '8px' }}>🔷</span>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#333' }}>Diners</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Other Payment Methods */}
+        <div>
+          <p style={{ color: '#999', fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', marginBottom: '15px' }}>Other</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '15px' }}>
+            {[
+              { name: 'Genie', emoji: '✨' },
+              { name: 'ezCash', emoji: '💰' },
+              { name: 'mCash', emoji: '📱' },
+              { name: 'Flipp', emoji: '🎫' },
+              { name: 'Temple', emoji: '🛕' },
+              { name: 'Q', emoji: 'Q' },
+              { name: 'iPay', emoji: '💳' }
+            ].map((method, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleSelectPaymentMethod(method.name.toLowerCase())}
+                style={{
+                  padding: '20px 15px',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.3s',
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#f5f5f5'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = '#fff'}
+              >
+                <span style={{ fontSize: '28px', marginBottom: '8px' }}>{method.emoji}</span>
+                <span style={{ fontSize: '11px', fontWeight: '600', color: '#333' }}>{method.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (showBankForm) {
+    return (
+      <div className="form-container">
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px' }}>
+          <button
+            onClick={handleBackFromCard}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '24px',
+              cursor: 'pointer',
+              marginRight: '10px',
+              padding: 0
+            }}
+          >
+            ← 
+          </button>
+          <h2 style={{ margin: 0 }}>Bank Card</h2>
+        </div>
+
+        {error && <div className="alert alert-error">{error}</div>}
+        {success && <div className="alert alert-success">{success}</div>}
+
+        <div style={{
+          backgroundColor: '#007bff',
+          color: 'white',
+          padding: '20px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <h3 style={{ marginTop: 0, marginBottom: '5px' }}>💳 Student Project</h3>
+          <p style={{ marginTop: 0, marginBottom: '10px' }}>NGO Donation</p>
+          <h2 style={{ marginTop: 0 }}>Rs. {parseFloat(amount).toFixed(2)}</h2>
+        </div>
+
+        <form onSubmit={handleCardPayment}>
+          <div className="form-group">
+            <label htmlFor="cardholderName">Name on Card</label>
+            <input
+              id="cardholderName"
+              type="text"
+              value={cardholderName}
+              onChange={(e) => setCardholderName(e.target.value)}
+              placeholder="Name on Card"
+              style={{ borderColor: cardErrors.cardholderName ? '#dc3545' : '#ddd' }}
+            />
+            {cardErrors.cardholderName && (
+              <p style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
+                {cardErrors.cardholderName}
+              </p>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="cardNumber">Credit Card Number</label>
+            <input
+              id="cardNumber"
+              type="text"
+              value={cardNumber}
+              onChange={handleCardNumberChange}
+              placeholder="Credit Card Number"
+              style={{ borderColor: cardErrors.cardNumber ? '#dc3545' : '#ddd' }}
+            />
+            {cardErrors.cardNumber && (
+              <p style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
+                {cardErrors.cardNumber}
+              </p>
+            )}
+            <p style={{ color: '#666', fontSize: '12px', marginTop: '5px', marginBottom: 0 }}>
+              Test: 4916 2175 0161 1292
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+            <div className="form-group">
+              <label htmlFor="cvv">CVV</label>
+              <input
+                id="cvv"
+                type="text"
+                value={cvv}
+                onChange={handleCVVChange}
+                placeholder="CVV"
+                maxLength="4"
+                style={{ borderColor: cardErrors.cvv ? '#dc3545' : '#ddd' }}
+              />
+              {cardErrors.cvv && (
+                <p style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
+                  {cardErrors.cvv}
+                </p>
+              )}
+              <p style={{ color: '#666', fontSize: '12px', marginTop: '5px', marginBottom: 0 }}>
+                Test: 123
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="expiry">Expiry MM/YY</label>
+              <input
+                id="expiry"
+                type="text"
+                value={expiry}
+                onChange={handleExpiryChange}
+                placeholder="MM/YY"
+                maxLength="5"
+                style={{ borderColor: cardErrors.expiry ? '#dc3545' : '#ddd' }}
+              />
+              {cardErrors.expiry && (
+                <p style={{ color: '#dc3545', fontSize: '12px', marginTop: '5px' }}>
+                  {cardErrors.expiry}
+                </p>
+              )}
+              <p style={{ color: '#666', fontSize: '12px', marginTop: '5px', marginBottom: 0 }}>
+                Test: 12/25
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '15px',
+              backgroundColor: loading ? '#ccc' : '#ffc107',
+              color: '#000',
+              border: 'none',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              borderRadius: '4px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              marginTop: '20px'
+            }}
+          >
+            {loading ? '⏳ Processing...' : 'Pay'}
+          </button>
+        </form>
+
+        <p style={{
+          marginTop: '20px',
+          fontSize: '12px',
+          color: '#888',
+          textAlign: 'center'
+        }}>
+          PayHere is a Central Bank approved Secure Payment Gateway Service
+        </p>
+      </div>
+    )
   }
 
   return (
@@ -220,114 +589,55 @@ export default function DonationForm({ user }) {
           />
         </div>
 
-        {/* Payment Method Selection */}
-        <div className="form-group">
-          <label htmlFor="cardType">Payment Method</label>
-          <select
-            id="cardType"
-            value={cardType}
-            onChange={(e) => {
-              setCardType(e.target.value)
-              setShowCardForm(!showCardForm)
-            }}
-            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
-          >
-            <option value="visa">💳 Visa Card</option>
-            <option value="mastercard">🏦 Mastercard</option>
-            <option value="amex">🔷 American Express</option>
-          </select>
+        <div style={{ 
+          padding: '20px', 
+          backgroundColor: '#f0f7ff', 
+          borderRadius: '8px', 
+          border: '2px solid #007bff',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <h3 style={{ marginTop: 0, color: '#0056b3' }}>💳 PayHere Secure Payment</h3>
+          <p style={{ marginBottom: '0.5rem', color: '#333' }}>
+            ✅ Multiple payment methods available
+          </p>
+          <p style={{ marginBottom: '1rem', color: '#666', fontSize: '14px' }}>
+            Bank Cards • Mobile Money • eWallets • Digital Banking
+          </p>
+          <p style={{ marginBottom: 0, color: '#888', fontSize: '12px' }}>
+            🔒 256-bit SSL encrypted • PCI DSS Compliant
+          </p>
         </div>
 
-        {/* Card Details Form */}
-        {showCardForm && (
-          <div style={{ border: '1px solid #e0e0e0', padding: '15px', borderRadius: '4px', marginBottom: '1rem', backgroundColor: '#f9f9f9' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '1rem', color: '#333' }}>💳 Enter Card Details</h3>
-
-            {/* Cardholder Name */}
-            <div className="form-group">
-              <label htmlFor="cardholderName">Cardholder Name</label>
-              <input
-                id="cardholderName"
-                type="text"
-                value={cardholderName}
-                onChange={(e) => setCardholderName(e.target.value)}
-                placeholder="John Doe"
-                required={showCardForm}
-              />
-            </div>
-
-            {/* Card Number */}
-            <div className="form-group">
-              <label htmlFor="cardNumber">Card Number</label>
-              <input
-                id="cardNumber"
-                type="text"
-                value={cardNumber}
-                onChange={handleCardNumberChange}
-                placeholder="1234 5678 9012 3456"
-                maxLength="19"
-                required={showCardForm}
-              />
-              <small style={{ color: '#666', display: 'block', marginTop: '5px' }}>
-                {cardType === 'visa' && '💳 Visa: 4916 2175 0161 1292 (test card)'}
-                {cardType === 'mastercard' && '🏦 Mastercard: 5307 7321 2553 1191 (test card)'}
-                {cardType === 'amex' && '🔷 AMEX: 3467 8100 5510 225 (test card)'}
-              </small>
-            </div>
-
-            {/* Expiry & CVV */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div className="form-group">
-                <label htmlFor="cardExpiry">Expiry (MM/YY)</label>
-                <input
-                  id="cardExpiry"
-                  type="text"
-                  value={cardExpiry}
-                  onChange={handleExpiryChange}
-                  placeholder="12/26"
-                  maxLength="5"
-                  required={showCardForm}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="cardCVV">CVV</label>
-                <input
-                  id="cardCVV"
-                  type="text"
-                  value={cardCVV}
-                  onChange={handleCVVChange}
-                  placeholder="123"
-                  maxLength="4"
-                  required={showCardForm}
-                />
-              </div>
-            </div>
-
-            <p style={{ fontSize: '0.85rem', color: '#999', marginTop: '1rem' }}>
-              🔒 Your card details are secure and handled by PayHere's encrypted payment gateway.
-            </p>
-          </div>
-        )}
-
-        <div className="alert alert-info">
-          <strong>🔒 Secure Payment:</strong> You will be redirected to PayHere's secure payment gateway to complete your donation safely.
-          {showCardForm && ' Your card details above are for reference; PayHere will handle the final transaction.'}
-        </div>
-
-        <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? 'Processing...' : 'Donate Now'}
+        <button 
+          type="submit" 
+          className="btn btn-primary"
+          style={{ 
+            width: '100%', 
+            padding: '12px',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            backgroundColor: '#007bff',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          💳 Proceed to PayHere
         </button>
       </form>
 
-      <p style={{ marginTop: '1rem', textAlign: 'center' }}>
-        <button
-          type="button"
-          className="btn btn-link"
-          style={{ padding: 0, border: 'none', background: 'none', color: '#007bff', textDecoration: 'underline', cursor: 'pointer' }}
-          onClick={() => navigate('/user/donations')}
-        >
-          View Donation History
-        </button>
+      <p style={{ 
+        marginTop: '20px', 
+        fontSize: '13px', 
+        color: '#666', 
+        textAlign: 'center',
+        lineHeight: '1.6'
+      }}>
+        After clicking "Proceed to PayHere", you'll be taken to a<br/>
+        <strong>secure PayHere payment page</strong> where you can choose<br/>
+        from multiple payment options including cards, mobile money, and more.
       </p>
     </div>
   )
