@@ -113,13 +113,28 @@ export default function DonationForm({ user }) {
       setSuccess('⏳ Opening PayHere payment gateway...')
 
       // Handle payment completion
-      window.payhere.onCompleted = function (orderId) {
+      window.payhere.onCompleted = async function (orderId) {
         console.log('✅ Payment completed. Order ID: ' + orderId)
-        setSuccess('⏳ Payment processing, please wait for confirmation...')
+        setSuccess('⏳ Processing payment, simulating webhook...')
+        
+        // Call test webhook to simulate PayHere notification (70% success)
+        try {
+          const webhookRes = await fetch(`${BACKEND_URL}/api/payhere/notify-test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order_id: orderId })
+          })
+          const webhookData = await webhookRes.json()
+          console.log('✅ Webhook response:', webhookData)
+          setSuccess(`✅ Payment ${webhookData.status}! Redirecting...`)
+        } catch (err) {
+          console.error('Webhook call failed:', err)
+        }
+        
         // Redirect to processing page to poll status
         setTimeout(() => {
           navigate(`/payment/processing?order_id=${orderId}`)
-        }, 500)
+        }, 1500)
       }
 
       // Handle payment dismissal
