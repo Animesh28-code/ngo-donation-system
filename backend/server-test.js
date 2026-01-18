@@ -12,6 +12,10 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Helpers
+const md5 = (str) => crypto.createHash("md5").update(str).digest("hex");
+const formatAmount = (amt) => Number(amt).toFixed(2);
+
 // In-memory database
 const db = {
   users: [
@@ -38,7 +42,13 @@ const db = {
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // handle PayHere form posts
 app.use(morgan("dev"));
+
+// Health check
+app.get("/", (req, res) => {
+  res.json({ message: "NGO Donation System API - Test Server Running" });
+});
 
 // Auth middleware
 function authMiddleware(req, res, next) {
@@ -177,17 +187,134 @@ app.get("/api/user/donations/by-order/:orderId", authMiddleware, (req, res) => {
   res.json(donation);
 });
 
-// ✅ PAYHERE INIT
+// ✅ PAYHERE INIT (sandbox, creates pending donation and returns PayHere payload)
 app.post("/api/payhere/init", authMiddleware, (req, res) => {
-  const { amount } = req.body;
-  const order_id = `DON_${Date.now()}`;
-  res.json({
-    devMode: true,
-    message: "DEVELOPMENT MODE: Payment auto-approved",
-    order_id,
-    amount: parseFloat(amount).toFixed(2),
-    status: "SUCCESS"
-  });
+  try {
+    const { amount, items = "NGO Donation", donor = {} } = req.body || {};
+    const numAmount = Number(amount);
+
+    if (!numAmount || numAmount < 30) {
+      return res.status(400).json({ message: "Invalid amount (minimum LKR 30)" });
+    }
+
+    const orderId = `DON_${Date.now()}`;
+    const currency = "LKR";
+
+    // Create pending donation attempt
+    const donation = {
+      _id: `don_${Date.now()}`,
+      userId: req.user.id,
+      amount: numAmount,
+      status: "PENDING",
+      paymentStatus: "PENDING",
+      orderId,
+      transactionId: orderId,
+      paymentMethod: "payhere",
+      paymentVerified: false,
+      createdAt: new Date()
+    };
+    db.donations.push(donation);
+
+    // Build PayHere payload
+    const merchant_id = process.env.PAYHERE_MERCHANT_ID || "1211149";
+    const merchant_secret = process.env.PAYHERE_MERCHANT_SECRET || "sandbox_secret";
+    const sandbox = String(process.env.PAYHERE_SANDBOX || "true") === "true";
+    const frontend = process.env.FRONTEND_URL || "http://127.0.0.1:5173";
+    const backend = process.env.BACKEND_URL || "http://127.0.0.1:5000";
+    const notify_url = process.env.PAYHERE_NOTIFY_URL || `${backend}/api/payhere/notify`;
+
+    const amountFormatted = formatAmount(numAmount);
+    const secretHash = md5(merchant_secret).toUpperCase();
+    const hash = md5(
+      merchant_id +
+      orderId +
+      amountFormatted +
+      currency +
+      secretHash
+    ).toUpperCase();
+
+    const payment = {
+      sandbox,
+      merchant_id,
+      return_url: `${frontend}/payment/processing?order_id=${orderId}`,
+      cancel_url: `${frontend}/payment/processing?order_id=${orderId}`,
+      notify_url,
+      order_id: orderId,
+      items,
+      amount: amountFormatted,
+      currency,
+      hash,
+      first_name: donor.first_name || "Donor",
+      last_name: donor.last_name || "",
+      email: donor.email || "",
+      phone: donor.phone || "",
+      address: donor.address || "",
+      city: donor.city || "",
+      country: "Sri Lanka"
+    };
+
+    console.log("✅ PayHere init created order", orderId, "status=PENDING");
+    return res.json(payment);
+  } catch (err) {
+    console.error("payhere/init error", err);
+    return res.status(500).json({ message: "Failed to init PayHere" });
+  }
+});
+
+// ✅ PAYHERE NOTIFY (webhook)
+app.post("/api/payhere/notify", (req, res) => {
+  try {
+    const merchant_id = process.env.PAYHERE_MERCHANT_ID || "1211149";
+    const merchant_secret = process.env.PAYHERE_MERCHANT_SECRET || "sandbox_secret";
+
+    const {
+      order_id,
+      status_code,
+      payhere_amount,
+      payhere_currency,
+      md5sig,
+    } = req.body || {};
+
+    if (!order_id) {
+      console.error("❌ Missing order_id in notify");
+      return res.status(400).send("missing order_id");
+    }
+
+    const secretHash = md5(merchant_secret).toUpperCase();
+    const expectedSig = md5(
+      merchant_id +
+      order_id +
+      payhere_amount +
+      payhere_currency +
+      status_code +
+      secretHash
+    ).toUpperCase();
+
+    const isValid = expectedSig === String(md5sig || "").toUpperCase();
+
+    let newStatus = "FAILED";
+    if (String(status_code) === "2") newStatus = "SUCCESS";
+    else if (String(status_code) === "0") newStatus = "PENDING";
+    else if (String(status_code) === "-1") newStatus = "CANCELED";
+    else if (String(status_code) === "-3") newStatus = "CHARGEDBACK";
+
+    const donation = db.donations.find((d) => d.orderId === order_id);
+    if (donation) {
+      donation.status = newStatus;
+      donation.paymentStatus = newStatus;
+      donation.paymentVerified = isValid && newStatus === "SUCCESS";
+      donation.transactionDate = new Date();
+      if (!isValid) {
+        donation.failureReason = "Invalid payment signature";
+      }
+    }
+
+    console.log("📨 PayHere notify", { order_id, status_code, isValid, newStatus });
+    return res.status(200).send("OK");
+  } catch (err) {
+    console.error("notify error", err);
+    return res.status(200).send("OK");
+  }
 });
 
 // ✅ ADMIN DASHBOARD

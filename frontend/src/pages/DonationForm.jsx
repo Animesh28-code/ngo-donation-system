@@ -10,6 +10,50 @@ export default function DonationForm({ user }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+  const [cardType, setCardType] = useState('visa')
+  const [cardNumber, setCardNumber] = useState('')
+  const [cardExpiry, setCardExpiry] = useState('')
+  const [cardCVV, setCardCVV] = useState('')
+  const [cardholderName, setCardholderName] = useState('')
+  const [showCardForm, setShowCardForm] = useState(false)
+
+  const handleCardNumberChange = (e) => {
+    const value = e.target.value.replace(/\s/g, '')
+    const formatted = value.replace(/(\d{4})(?=\d)/g, '$1 ')
+    setCardNumber(formatted)
+  }
+
+  const handleExpiryChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '')
+    if (value.length >= 2) {
+      value = value.slice(0, 2) + '/' + value.slice(2, 4)
+    }
+    setCardExpiry(value)
+  }
+
+  const handleCVVChange = (e) => {
+    setCardCVV(e.target.value.replace(/\D/g, '').slice(0, 4))
+  }
+
+  const validateCardDetails = () => {
+    if (!cardNumber.replace(/\s/g, '') || cardNumber.replace(/\s/g, '').length < 13) {
+      setError('Please enter a valid card number')
+      return false
+    }
+    if (!cardExpiry || cardExpiry.length < 5) {
+      setError('Please enter card expiry (MM/YY)')
+      return false
+    }
+    if (!cardCVV || cardCVV.length < 3) {
+      setError('Please enter card CVV')
+      return false
+    }
+    if (!cardholderName.trim()) {
+      setError('Please enter cardholder name')
+      return false
+    }
+    return true
+  }
 
   const startPayHerePayment = async (donationData) => {
     try {
@@ -56,6 +100,10 @@ export default function DonationForm({ user }) {
 
       const payment = await res.json()
       console.log('✅ Payment object received:', payment)
+      console.log('✅ merchant_id:', payment.merchant_id)
+      console.log('✅ order_id:', payment.order_id)
+      console.log('✅ amount:', payment.amount)
+      console.log('✅ hash:', payment.hash)
 
       // Check if PayHere is loaded
       if (!window.payhere) {
@@ -90,7 +138,8 @@ export default function DonationForm({ user }) {
         setSuccess('')
       }
 
-      // Start PayHere payment
+      // Start PayHere payment with all required fields
+      console.log('🚀 Starting PayHere payment with:', payment)
       window.payhere.startPayment(payment)
 
     } catch (err) {
@@ -105,6 +154,15 @@ export default function DonationForm({ user }) {
     e.preventDefault()
     setError('')
     setSuccess('')
+
+    // Check if card form is shown and validate
+    if (showCardForm) {
+      if (!validateCardDetails()) {
+        setLoading(false)
+        return
+      }
+    }
+
     setLoading(true)
 
     try {
@@ -147,9 +205,98 @@ export default function DonationForm({ user }) {
           />
         </div>
 
+        {/* Payment Method Selection */}
+        <div className="form-group">
+          <label htmlFor="cardType">Payment Method</label>
+          <select
+            id="cardType"
+            value={cardType}
+            onChange={(e) => {
+              setCardType(e.target.value)
+              setShowCardForm(!showCardForm)
+            }}
+            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}
+          >
+            <option value="visa">💳 Visa Card</option>
+            <option value="mastercard">🏦 Mastercard</option>
+            <option value="amex">🔷 American Express</option>
+          </select>
+        </div>
+
+        {/* Card Details Form */}
+        {showCardForm && (
+          <div style={{ border: '1px solid #e0e0e0', padding: '15px', borderRadius: '4px', marginBottom: '1rem', backgroundColor: '#f9f9f9' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem', color: '#333' }}>💳 Enter Card Details</h3>
+
+            {/* Cardholder Name */}
+            <div className="form-group">
+              <label htmlFor="cardholderName">Cardholder Name</label>
+              <input
+                id="cardholderName"
+                type="text"
+                value={cardholderName}
+                onChange={(e) => setCardholderName(e.target.value)}
+                placeholder="John Doe"
+                required={showCardForm}
+              />
+            </div>
+
+            {/* Card Number */}
+            <div className="form-group">
+              <label htmlFor="cardNumber">Card Number</label>
+              <input
+                id="cardNumber"
+                type="text"
+                value={cardNumber}
+                onChange={handleCardNumberChange}
+                placeholder="1234 5678 9012 3456"
+                maxLength="19"
+                required={showCardForm}
+              />
+              <small style={{ color: '#666', display: 'block', marginTop: '5px' }}>
+                {cardType === 'visa' && '💳 Visa: 4916 2175 0161 1292 (test card)'}
+                {cardType === 'mastercard' && '🏦 Mastercard: 5307 7321 2553 1191 (test card)'}
+                {cardType === 'amex' && '🔷 AMEX: 3467 8100 5510 225 (test card)'}
+              </small>
+            </div>
+
+            {/* Expiry & CVV */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group">
+                <label htmlFor="cardExpiry">Expiry (MM/YY)</label>
+                <input
+                  id="cardExpiry"
+                  type="text"
+                  value={cardExpiry}
+                  onChange={handleExpiryChange}
+                  placeholder="12/26"
+                  maxLength="5"
+                  required={showCardForm}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="cardCVV">CVV</label>
+                <input
+                  id="cardCVV"
+                  type="text"
+                  value={cardCVV}
+                  onChange={handleCVVChange}
+                  placeholder="123"
+                  maxLength="4"
+                  required={showCardForm}
+                />
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: '#999', marginTop: '1rem' }}>
+              🔒 Your card details are secure and handled by PayHere's encrypted payment gateway.
+            </p>
+          </div>
+        )}
+
         <div className="alert alert-info">
-          <strong>PayHere Sandbox Payment:</strong> You will be redirected to PayHere to complete your donation securely.
-          Use test card: 4111111111111111 (exp: 12/26, CVV: 123)
+          <strong>🔒 Secure Payment:</strong> You will be redirected to PayHere's secure payment gateway to complete your donation safely.
+          {showCardForm && ' Your card details above are for reference; PayHere will handle the final transaction.'}
         </div>
 
         <button type="submit" className="btn btn-primary" disabled={loading}>
